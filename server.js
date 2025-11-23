@@ -55,10 +55,11 @@ app.use(passport.session());
 
 // Passport Steam Strategy
 passport.use(new SteamStrategy({
-    returnURL: `${process.env.BASE_URL || 'https://trading.tf'}/auth/steam/return`,
-    realm: process.env.BASE_URL || 'https://trading.tf',
+    returnURL: `https://trading.tf/auth/steam/return`,
+    realm: `https://trading.tf`,
     apiKey: process.env.STEAM_API_KEY
   },
+  // ...
   async (identifier, profile, done) => {
     try {
       console.log('🔐 Steam authentication attempt for:', profile.displayName);
