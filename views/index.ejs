@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steam Auth</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body { 
+            font-family: 'Arial', sans-serif; 
+            background: #1b2838; 
+            color: white;
+            min-height: 100vh;
+        }
+
+        /* Navigation Bar */
+        .navbar {
+            background: #171a21;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #66c0f4;
+        }
+
+        .nav-auth {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .steam-login-btn {
+            background: transparent;
+            border: 2px solid #5c7e10;
+            padding: 8px 12px;
+            border-radius: 4px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+        }
+
+        .steam-login-btn:hover {
+            background: #5c7e10;
+            transform: translateY(-2px);
+        }
+
+        .steam-icon {
+            width: 24px;
+            height: 24px;
+        }
+
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #66c0f4;
+        }
+
+        .nav-btn {
+            background: #5c7e10;
+            color: white;
+            padding: 8px 16px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .nav-btn:hover {
+            background: #6c8c20;
+        }
+
+        .logout-btn {
+            background: #ff4444;
+        }
+
+        .logout-btn:hover {
+            background: #cc3333;
+        }
+
+        /* Main Content */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .hero {
+            margin-top: 6rem;
+            padding: 4rem 2rem;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+            color: #66c0f4;
+            text-shadow: 0 2px 10px rgba(102, 192, 244, 0.3);
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            margin-bottom: 3rem;
+            opacity: 0.9;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Remove the middle button - only show message */
+        .welcome-message {
+            background: rgba(42, 71, 94, 0.5);
+            padding: 2rem;
+            border-radius: 10px;
+            border: 1px solid #66c0f4;
+            margin-top: 2rem;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .user-avatar-large {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 3px solid #66c0f4;
+        }
+
+        .profile-btn {
+            background: #66c0f4;
+            color: #1b2838;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            display: inline-block;
+            margin-top: 1rem;
+            transition: all 0.3s;
+        }
+
+        .profile-btn:hover {
+            background: #4a9cd4;
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="logo">SteamAuth</div>
+        <div class="nav-auth">
+            <% if (user) { %>
+                <div class="user-menu">
+                    <img src="<%= user.avatar.medium %>" alt="Avatar" class="user-avatar">
+                    <span><%= user.username %></span>
+                    <a href="/profile" class="nav-btn">Profile</a>
+                    <a href="/logout" class="nav-btn logout-btn">Logout</a>
+                </div>
+            <% } else { %>
+                <a href="/auth/steam" class="steam-login-btn" title="Login with Steam">
+                    <img src="https://community.akamai.steamstatic.com/public/images/signinthroughsteam/sits_01.png" 
+                         alt="Steam" class="steam-icon">
+                </a>
+            <% } %>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="hero">
+            <h1>Steam Authentication</h1>
+            <p>Connect your Steam account to access your profile and statistics</p>
+            
+            <% if (user) { %>
+                <div class="welcome-message">
+                    <div class="user-info">
+                        <img src="<%= user.avatar.large %>" alt="Profile" class="user-avatar-large">
+                        <div style="text-align: left;">
+                            <h3>Welcome back, <%= user.username %>!</h3>
+                            <p>SteamID64: <%= user.steamId %></p>
+                        </div>
+                    </div>
+                    <p>You are successfully authenticated with Steam</p>
+                    <a href="/profile" class="profile-btn">View Full Profile</a>
+                </div>
+            <% } else { %>
+                <div class="welcome-message">
+                    <p>Click the Steam icon in the top right corner to login</p>
+                </div>
+            <% } %>
+        </div>
+    </div>
+</body>
+</html>
