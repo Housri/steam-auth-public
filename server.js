@@ -1,80 +1,18 @@
-const express = require('express');
-const session = require('express-session');
-const passport = require('passport');
-const SteamStrategy = require('passport-steam').Strategy;
-const { Pool } = require('pg');
-require('dotenv').config();
-
-const app = express();
-
-// Supabase PostgreSQL connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
-
-// Test connection on startup
-pool.on('connect', () => {
-  console.log('✅ Connected to PostgreSQL database');
-});
-
-pool.on('error', (err) => {
-  console.error('❌ Database connection error:', err);
-});
-
-// Create users table if not exists
-async function initializeDatabase() {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        steam_id VARCHAR(255) UNIQUE NOT NULL,
-        username VARCHAR(255) NOT NULL,
-        profile_url TEXT,
-        avatar_small TEXT,
-        avatar_medium TEXT,
-        avatar_large TEXT,
-        last_login TIMESTAMPTZ DEFAULT NOW(),
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    console.log('✅ Database initialized successfully');
-  } catch (error) {
-    console.error('❌ Database initialization error:', error);
-  }
-}
-
-initializeDatabase();
-
-// Session configuration for production
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: { 
-    secure: process.env.NODE_ENV === 'production', // true in production
-    maxAge: 24 * 60 * 60 * 1000,
-    httpOnly: true
-  }
-}));
-
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Passport Steam Strategy
+// Passport Steam Strategy with better error handling
 passport.use(new SteamStrategy({
-    returnURL: `https://trading.tf/auth/steam/return`,
-    realm: `https://trading.tf`,
+    returnURL: `${process.env.BASE_URL || 'https://trading.tf'}/auth/steam/return`,
+    realm: process.env.BASE_URL || 'https://trading.tf',
     apiKey: process.env.STEAM_API_KEY
   },
-  // ...
   async (identifier, profile, done) => {
     try {
       console.log('🔐 Steam authentication attempt for:', profile.displayName);
       
+      // Check if database connection is working
+      if (!pool) {
+        throw new Error('Database connection not available');
+      }
+
       // Check if user exists
       const existingUser = await pool.query(
         'SELECT * FROM users WHERE steam_id = $1',
@@ -84,6 +22,7 @@ passport.use(new SteamStrategy({
       let user;
       
       if (existingUser.rows.length === 0) {
+        console.log('📝 Creating new user...');
         // Create new user
         const newUser = await pool.query(
           `INSERT INTO users (steam_id, username, profile_url, avatar_small, avatar_medium, avatar_large) 
@@ -114,17 +53,11 @@ passport.use(new SteamStrategy({
         };
         console.log('✅ New user created:', user.username);
       } else {
+        console.log('📝 Updating existing user...');
         // Update existing user
         const updatedUser = await pool.query(
-          'UPDATE users SET last_login = NOW(), username = $1, profile_url = $2, avatar_small = $3, avatar_medium = $4, avatar_large = $5 WHERE steam_id = $6 RETURNING *',
-          [
-            profile.displayName,
-            profile._json.profileurl,
-            profile._json.avatar,
-            profile._json.avatarmedium,
-            profile._json.avatarfull,
-            profile.id
-          ]
+          'UPDATE users SET last_login = NOW(), username = $1 WHERE steam_id = $2 RETURNING *',
+          [profile.displayName, profile.id]
         );
         
         user = {
@@ -146,186 +79,54 @@ passport.use(new SteamStrategy({
       return done(null, user);
     } catch (error) {
       console.error('❌ Authentication error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        stack: error.stack,
+        profileId: profile?.id,
+        profileName: profile?.displayName
+      });
       return done(error);
     }
   }
 ));
 
-passport.serializeUser((user, done) => {
-  done(null, user.steamId);
-});
-
-passport.deserializeUser(async (steamId, done) => {
-  try {
-    const userResult = await pool.query(
-      'SELECT * FROM users WHERE steam_id = $1',
-      [steamId]
-    );
-    
-    if (userResult.rows.length === 0) {
-      return done(null, false);
-    }
-    
-    const user = userResult.rows[0];
-    const userObj = {
-      id: user.id,
-      steamId: user.steam_id,
-      username: user.username,
-      profileUrl: user.profile_url,
-      avatar: {
-        small: user.avatar_small,
-        medium: user.avatar_medium,
-        large: user.avatar_large
-      },
-      lastLogin: user.last_login,
-      createdAt: user.created_at
-    };
-    
-    done(null, userObj);
-  } catch (error) {
-    console.error('❌ Deserialize user error:', error);
-    done(error);
-  }
-});
-
-// View engine and routes
-app.set('view engine', 'ejs');
-app.set('views', './views');
-
-// Basic route
-app.get('/', (req, res) => {
-  res.render('index', { user: req.user });
-});
-
-// Steam authentication routes
-app.get('/auth/steam',
-  passport.authenticate('steam', { failureRedirect: '/' }),
-  (req, res) => {
-    res.redirect('/');
-  }
-);
-
+// Fix the return route with better error handling
 app.get('/auth/steam/return',
-  passport.authenticate('steam', { 
-    failureRedirect: '/',
-    failureMessage: true 
-  }),
+  (req, res, next) => {
+    passport.authenticate('steam', { 
+      failureRedirect: '/error',
+      failureMessage: true 
+    })(req, res, next);
+  },
   (req, res) => {
-    // Successful authentication
-    console.log('✅ User successfully authenticated:', req.user.username);
+    console.log('✅ User successfully authenticated, redirecting to profile:', req.user?.username);
     res.redirect('/profile');
   }
 );
 
-// Profile route with error handling
+// Add a simple profile route that works even if database fails
 app.get('/profile', (req, res) => {
   if (!req.isAuthenticated()) {
     return res.redirect('/');
   }
   
   try {
-    // Ensure user data is properly structured
+    // Simple profile data - works even if database has issues
     const userData = {
-      username: req.user.username || 'Unknown',
+      username: req.user.username || 'Steam User',
       steamId: req.user.steamId || 'Unknown',
       profileUrl: req.user.profileUrl || '#',
       avatar: {
-        small: req.user.avatar?.small || '',
-        medium: req.user.avatar?.medium || '',
-        large: req.user.avatar?.large || ''
-      },
-      createdAt: req.user.createdAt || new Date(),
-      lastLogin: req.user.lastLogin || new Date()
+        small: req.user.avatar?.small || req.user.avatar_small || '',
+        medium: req.user.avatar?.medium || req.user.avatar_medium || '',
+        large: req.user.avatar?.large || req.user.avatar_large || '/default-avatar.png'
+      }
     };
     
     console.log('👤 Rendering profile for:', userData.username);
     res.render('profile', { user: userData });
   } catch (error) {
     console.error('❌ Profile render error:', error);
-    res.status(500).render('error', { 
-      message: 'Error loading profile',
-      error: process.env.NODE_ENV === 'production' ? {} : error 
-    });
+    res.redirect('/error');
   }
-});
-
-// Logout route
-app.get('/logout', (req, res) => {
-  const username = req.user?.username || 'Unknown';
-  req.logout((err) => {
-    if (err) { 
-      console.error('❌ Logout error:', err);
-      return res.redirect('/');
-    }
-    console.log('👋 User logged out:', username);
-    res.redirect('/');
-  });
-});
-
-// Health check route
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// Database test route
-/ Fixed database test route
-app.get('/test-db', async (req, res) => {
-  try {
-    console.log('Testing database connection...');
-    
-    // Test basic connection
-    const client = await pool.connect();
-    const result = await client.query('SELECT NOW() as current_time');
-    const currentTime = result.rows[0].current_time;
-    
-    // Test users table
-    const userResult = await client.query('SELECT COUNT(*) as user_count FROM users');
-    const userCount = userResult.rows[0].user_count;
-    
-    client.release();
-    
-    res.json({ 
-      success: true, 
-      databaseTime: currentTime,
-      userCount: parseInt(userCount),
-      message: 'Database connection successful!' 
-    });
-  } catch (error) {
-    console.error('❌ Database test error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      connectionString: process.env.DATABASE_URL ? 'DATABASE_URL is set' : 'DATABASE_URL is missing'
-    });
-  }
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('❌ Server error:', err);
-  res.status(500).render('error', { 
-    message: 'Something went wrong!',
-    error: process.env.NODE_ENV === 'production' ? {} : err 
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).render('error', { 
-    message: 'Page not found',
-    error: {} 
-  });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Base URL: ${process.env.BASE_URL || 'http://localhost:3000'}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔧 Database test: http://localhost:${PORT}/test-db`);
 });
