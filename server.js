@@ -261,22 +261,34 @@ app.get('/health', (req, res) => {
 });
 
 // Database test route
+/ Fixed database test route
 app.get('/test-db', async (req, res) => {
   try {
-    const result = await pool.query('SELECT NOW() as current_time');
-    const userCount = await pool.query('SELECT COUNT(*) as count FROM users');
+    console.log('Testing database connection...');
+    
+    // Test basic connection
+    const client = await pool.connect();
+    const result = await client.query('SELECT NOW() as current_time');
+    const currentTime = result.rows[0].current_time;
+    
+    // Test users table
+    const userResult = await client.query('SELECT COUNT(*) as user_count FROM users');
+    const userCount = userResult.rows[0].user_count;
+    
+    client.release();
     
     res.json({ 
       success: true, 
-      databaseTime: result.rows[0].current_time,
-      userCount: userCount.rows[0].count,
+      databaseTime: currentTime,
+      userCount: parseInt(userCount),
       message: 'Database connection successful!' 
     });
   } catch (error) {
     console.error('❌ Database test error:', error);
     res.status(500).json({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      connectionString: process.env.DATABASE_URL ? 'DATABASE_URL is set' : 'DATABASE_URL is missing'
     });
   }
 });
